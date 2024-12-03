@@ -1,6 +1,6 @@
 """
 Computer Lab 1 
-Writers: Melker Haglund 
+Writers: Melker Haglund, Jonas Rosengren
 
 """
 # Copyright [2024] [KTH Royal Institute of Technology] 
@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import time
 from IPython import display
 import random
+from tqdm import tqdm
 
 # Implemented methods
 methods = ['DynProg', 'ValIter']
@@ -46,7 +47,7 @@ class Maze:
     # Reward values 
     STEP_REWARD = -1          #TODO
     GOAL_REWARD =  100         #TODO
-    IMPOSSIBLE_REWARD = -5    #TODO, change this if we want to punish hitting wall/going out of bounds
+    IMPOSSIBLE_REWARD = -100    #TODO, change this if we want to punish hitting wall/going out of bounds
     MINOTAUR_REWARD =  -100     #TODO
 
     def __init__(self, maze):
@@ -79,16 +80,16 @@ class Maze:
         s = 0
         for i in range(self.maze.shape[0]):
             for j in range(self.maze.shape[1]):
+                if self.maze[i,j] != 1:#Only if the agents coordinates are in a wall we don't create a state
                 
-                if self.maze[i, j] == 2:
-                    self.goal = (i, j)
-                elif self.maze[i, j] == 3:
-                    self.key = (i, j)
-                    
-                for k in range(self.maze.shape[0]):
-                    for l in range(self.maze.shape[1]):
-                        for key in range(2):#Adds a boolean to the state to represent the key
-                            if self.maze[i,j] != 1:#Only if the agents coordinates are in a wall we don't create a state
+                    if self.maze[i, j] == 2:
+                        self.goal = (i, j)
+                    elif self.maze[i, j] == 3:
+                        self.key = (i, j)
+
+                    for k in range(self.maze.shape[0]):
+                        for l in range(self.maze.shape[1]):
+                            for key in range(2):#Adds a boolean to the state to represent the key
                                 states[s] = ((i,j), (k,l), key)
                                 map[((i,j), (k,l), key)] = s
                                 s += 1
@@ -129,15 +130,18 @@ class Maze:
             actions_minotaur = [[0, -1], [0, 1], [-1, 0], [1, 0]] # Possible moves for the Minotaur
             rows_minotaur, cols_minotaur = [], []
             for i in range(len(actions_minotaur)):
-                # Is the minotaur getting out of the limits of the maze?
-                impossible_action_minotaur = (self.states[state][1][0] + actions_minotaur[i][0] == -1) or \
-                                             (self.states[state][1][0] + actions_minotaur[i][0] == self.maze.shape[0]) or \
-                                             (self.states[state][1][1] + actions_minotaur[i][1] == -1) or \
-                                             (self.states[state][1][1] + actions_minotaur[i][1] == self.maze.shape[1])
+                # Is the minotaur getting out of the limits of the maze or hitting a wall?
+                new_row = self.states[state][1][0] + actions_minotaur[i][0]
+                new_col = self.states[state][1][1] + actions_minotaur[i][1]
+                impossible_action_minotaur = (new_row == -1) or \
+                                           (new_row == self.maze.shape[0]) or \
+                                           (new_col == -1) or \
+                                           (new_col == self.maze.shape[1]) or \
+                                           (self.maze[new_row, new_col] == 1)  # Check if position is a wall
             
                 if not impossible_action_minotaur:
-                    rows_minotaur.append(self.states[state][1][0] + actions_minotaur[i][0])
-                    cols_minotaur.append(self.states[state][1][1] + actions_minotaur[i][1])  
+                    rows_minotaur.append(new_row)
+                    cols_minotaur.append(new_col)
 
             # Based on the impossiblity check return the next possible states.
             if not impossible_action_player: # The action is not possible, so the player remains in place
@@ -240,7 +244,7 @@ class Maze:
         terminal = ['Poison','Win','Eaten']
 
         ######
-        for _ in range(n_episodes):
+        for _ in tqdm(range(n_episodes), desc="Training Q-learning"):
             s = self.map[start]
 
             while self.states[s] not in terminal:
@@ -383,8 +387,8 @@ def animate_solution(maze, path):
 if __name__ == "__main__":
     # Description of the maze as a numpy array
     maze = np.array([
-        [0, 0, 1, 0, 0, 0, 0, 0],
-        [0, 0, 1, 0, 0, 1, 3, 0],
+        [0, 0, 1, 0, 0, 0, 0, 3],
+        [0, 0, 1, 0, 0, 1, 0, 0],
         [0, 0, 1, 0, 0, 1, 1, 1],
         [0, 0, 1, 0, 0, 1, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0],
@@ -396,17 +400,18 @@ if __name__ == "__main__":
     start  = ((0,0), (6,4), False)
     #Hyper parameters
     alpha = 2/3
-    gamma = 0.9
+    gamma = 1
     epsilon = 0.1
-    n_episodes = 10000
+    n_episodes = 5000
     
-    POISON_PROBABILITY = 0
+    POISON_PROBABILITY = 1/50
 
     Q = env.q_learning(start, alpha, gamma, epsilon, n_episodes)
     # Simulate the shortest path starting from position A
     method = 'Q-learning'
     
 
+    
     path = env.simulate(start, Q, method)
     print(path)
 
@@ -418,3 +423,47 @@ if __name__ == "__main__":
             sum += 1
     print("The probability of winning:",sum/n_runs)"""
     #animate_solution(maze, path)
+
+    n_runs = 10000
+    stats = {
+        'Poison': 0,
+        'Win': 0,
+        'Key': 0,
+        'Eaten': 0,
+        'avg_steps': 0,
+        'avg_key_steps': 0
+    }
+    
+    for i in tqdm(range(n_runs), desc="Running simulations"):
+        path = env.simulate(start, Q, method)
+        
+        # Record outcome
+        if 'Poison' in path:
+            stats['Poison'] += 1
+        elif 'Win' in path:
+            stats['Win'] += 1
+        elif 'Eaten' in path:
+            stats['Eaten'] += 1
+
+        
+        # Record steps
+        stats['avg_steps'] += len(path) - 1  # -1 because we don't count initial position
+        
+        # Find when key was captured
+        for step_idx, state in enumerate(path):
+            if isinstance(state, tuple) and state[2] == 1:  # Found key
+                stats['avg_key_steps'] += step_idx
+                stats['Key'] += 1
+                break
+    
+    # Calculate averages
+    stats['avg_steps'] /= n_runs
+    stats['avg_key_steps'] /= n_runs
+    
+    print(f"Results over {n_runs} runs:")
+    print(f"Win rate: {stats['Win']/n_runs:.2%}")
+    print(f"Eaten rate: {stats['Eaten']/n_runs:.2%}")
+    print(f"Poison rate: {stats['Poison']/n_runs:.2%}")
+    print(f"Average steps per episode: {stats['avg_steps']:.1f}")
+    print(f"Average steps to get key: {stats['avg_key_steps']:.1f}")
+    print(f"Key rate: {stats['Key']/n_runs:.2%}")
