@@ -237,23 +237,21 @@ class Maze:
         """Trains the Q-network and returns the trained Q-table
         """
         #Initialize Q-table
-        Q = np.zeros((self.n_states,self.n_actions))
+        Q = np.random.rand(self.n_states,self.n_actions)
         nsa = np.zeros((self.n_states,self.n_actions))
 
         ######End conditions
         terminal = ['Poison','Win','Eaten']
+        initial = np.zeros(n_episodes)
 
         ######
-        for _ in tqdm(range(n_episodes), desc="Training Q-learning"):
+        for i in tqdm(range(n_episodes), desc=f"Training Q-learning - epssilon = {epsilon}"):
             s = self.map[start]
 
             while self.states[s] not in terminal:
                 a = epsilon_greedy(Q, s, epsilon)
 
                 next_states = self.__move(s, a)
-                if 'Win' in next_states:
-                    #print(next_states)
-                    continue
 
                 ####Minotaur action
                 if random.random() <= 0.35:
@@ -268,12 +266,11 @@ class Maze:
                 nsa[s,a] += 1
                 #Prepare for next iternation 
                 s = s_n
-
+            initial[i] = (1-epsilon)*np.max(Q[self.map[start],:])+(epsilon/self.n_actions)*np.sum(Q[self.map[start],:])#Computed the value function based on Q
             for a in range(self.n_actions):   #Handles the Q-value for terminal 
                 Q[s,a] = Q[s,a] +learning_rate(nsa[s,a],alpha)*(env.rewards[s,a]-Q[s,a]) #Since Q(s',a'_best)=0
                 nsa[s,a] += 1
-        return Q
-
+        return [Q,initial]
 
     def simulate(self, start, Q, method):
 
@@ -402,11 +399,11 @@ if __name__ == "__main__":
     alpha = 2/3
     gamma = 1
     epsilon = 0.1
-    n_episodes = 5000
+    n_episodes = 50000
     
     POISON_PROBABILITY = 1/50
 
-    Q = env.q_learning(start, alpha, gamma, epsilon, n_episodes)
+    [Q, initial] = env.q_learning(start, alpha, gamma, epsilon, n_episodes)
     # Simulate the shortest path starting from position A
     method = 'Q-learning'
     
