@@ -45,7 +45,7 @@ class Maze:
     }
 
     # Reward values 
-    STEP_REWARD = -1          #TODO
+    STEP_REWARD = -1         #TODO
     GOAL_REWARD =  100         #TODO
     IMPOSSIBLE_REWARD = -100    #TODO, change this if we want to punish hitting wall/going out of bounds
     MINOTAUR_REWARD =  -100     #TODO
@@ -397,7 +397,7 @@ if __name__ == "__main__":
     start  = ((0,0), (6,4), False)
     #Hyper parameters
     alpha = 2/3
-    gamma = 1
+    gamma = 0.95
     epsilon = 0.1
     n_episodes = 50000
     
@@ -431,6 +431,8 @@ if __name__ == "__main__":
         'avg_key_steps': 0
     }
     
+    win_paths = []
+    
     for i in tqdm(range(n_runs), desc="Running simulations"):
         path = env.simulate(start, Q, method)
         
@@ -439,10 +441,10 @@ if __name__ == "__main__":
             stats['Poison'] += 1
         elif 'Win' in path:
             stats['Win'] += 1
+            win_paths.append(path)
         elif 'Eaten' in path:
             stats['Eaten'] += 1
 
-        
         # Record steps
         stats['avg_steps'] += len(path) - 1  # -1 because we don't count initial position
         
@@ -464,3 +466,9 @@ if __name__ == "__main__":
     print(f"Average steps per episode: {stats['avg_steps']:.1f}")
     print(f"Average steps to get key: {stats['avg_key_steps']:.1f}")
     print(f"Key rate: {stats['Key']/n_runs:.2%}")
+    
+    if win_paths:
+        shortest_win_path = min(win_paths, key=len)
+        print(f"Shortest winning path (length {len(shortest_win_path)}):", shortest_win_path)
+    else:
+        print("No winning paths found")
