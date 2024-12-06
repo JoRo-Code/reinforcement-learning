@@ -220,7 +220,7 @@ class Maze:
 
         return rewards
 
-    def SARSA(self, start, alpha, gamma, epsilon):
+    def SARSA(self, start, alpha, gamma, epsilon, n_episodes):
         """Trains the Q-network and returns the trained Q-table for SARSA
         """
         #Initialize Q-table
@@ -230,13 +230,12 @@ class Maze:
 
         ######End conditions
         terminal = ['Poison','Win','Eaten']
-        episodes_N = 50000
-        initial = np.zeros(episodes_N)
+        initial = np.zeros(n_episodes)
         for state in terminal:
             s_in = self.map[state]
             Q[s_in,:] = 0#self.rewards[s_in,:]
         ######
-        for i in tqdm(range(episodes_N), desc=f"Training SARSA - epsilon = {epsilon}"):
+        for i in tqdm(range(n_episodes), desc=f"Training SARSA - epsilon = {epsilon}"):
             s = self.map[start]
             a = epsilon_greedy(Q, s, epsilon)
 
@@ -253,15 +252,10 @@ class Maze:
                 s_n = self.map[next_s]
                 a_n = epsilon_greedy(Q, s_n, epsilon)
 
-                # Q = q_update(Q,s,a,env.rewards[s,a],s_n,a_n,learning_rate(nsa[s,a],alpha),gamma)
+                Q = q_update(Q,s,a,env.rewards[s,a],s_n,a_n,learning_rate(nsa[s,a],alpha),gamma)
 
-
-                # SARSA update (uses Q[s_n, a_n] instead of max(Q[s_n,:]))
-                Q[s,a] = Q[s,a] + learning_rate(nsa[s,a],alpha) * (
-                    self.rewards[s,a] + gamma * Q[s_n,a_n] - Q[s,a]
-                )
                 nsa[s,a] += 1
-                # nsa[s_n,a_n] += 1
+                nsa[s_n,a_n] += 1
                 #Prepare for next iternation 
                 s = s_n
                 a = a_n
@@ -272,7 +266,7 @@ class Maze:
         return [Q,initial]
 
 
-    def simulate(self, start, Q, method):
+    def simulate(self, start, Q):
 
         path = list()
         terminal = ['Poison','Win','Eaten']
@@ -321,9 +315,14 @@ def epsilon_greedy(Q, s, epsilon):
     return action
 
 def q_update(Q, s, a, r, s_next, a_next, learning_rate, gamma):
-    """Updates the Q-value based on the latest transition
+    """Updates the Q-value based on the latest transition.
+    On first visit (learning_rate = 1), sets Q-value directly to reward.
+    Otherwise, uses standard SARSA update.
     """
-    Q[s,a] = Q[s,a] + learning_rate*(r+gamma*Q[s_next,a_next]-Q[s,a]) 
+    if learning_rate == 1:  # First visit
+        Q[s,a] = r
+    else:
+        Q[s,a] = Q[s,a] + learning_rate*(r + gamma*Q[s_next,a_next] - Q[s,a])
     return Q
 
 def learning_rate(times_visited, alpha):
@@ -398,61 +397,55 @@ if __name__ == "__main__":
     #Hyper parameters
     alpha = 2/3
     gamma = 1
-    epsilon = 0.1
-
-    [Q,initial] = env.SARSA(start,alpha,gamma,epsilon)
-    # Simulate the shortest path starting from position A
-    method = 'Q-learning'
     
-    [Q2,initial2] = env.SARSA(start,alpha,gamma,epsilon*2)
-
-    #path = env.simulate(start, Q, method)
-    #print(path)
-
-    sum = 0 
-    poison = 0
-    eaten = 0
-    n_runs = 100000
-    for i in tqdm(range(n_runs), desc="Running simulations"):
-        path = env.simulate(start, Q, method)
-        if 'Win' in path:
-            sum += 1
-        elif 'Poison' in path:
-            poison += 1
-        else:
-            eaten += 1
+    epsilons = [0.001, 0.01, 0.02, 0.05] 
+    n_runs = 10000
+    n_episodes = 50000
+    
+    # Store results for each epsilon
+    results = {}
+    Q_tables = {}
+    initial_values = {}
+    
+    for epsilon in epsilons:
+        # Train SARSA
+        Q, initial = env.SARSA(start, alpha, gamma, epsilon, n_episodes)
+        Q_tables[epsilon] = Q
+        initial_values[epsilon] = initial
         
-    print("Poison:",poison/n_runs)   
-    print("Eaten:",eaten/n_runs)  
-    print("The probability of winning:",sum/n_runs)
+        # Run simulations
+        outcomes = {'win': 0, 'poison': 0, 'eaten': 0}
+        for _ in tqdm(range(n_runs), desc=f"Simulating ε={epsilon}"):
+            path = env.simulate(start, Q)
+            if 'Win' in path:
+                outcomes['win'] += 1
+            elif 'Poison' in path:
+                outcomes['poison'] += 1
+            else:
+                outcomes['eaten'] += 1
+        
+        # Store normalized results
+        results[epsilon] = {k: v/n_runs for k, v in outcomes.items()}
+        
+        # Print results
+        print(f"\nResults for ε={epsilon}:")
+        print(f"Poison: {results[epsilon]['poison']:.4f}")
+        print(f"Eaten: {results[epsilon]['eaten']:.4f}")
+        print(f"Win probability: {results[epsilon]['win']:.4f}")
     
-    sum = 0 
-    poison = 0
-    eaten = 0
-    for i in tqdm(range(n_runs), desc="Running simulations"):
-        path = env.simulate(start, Q2, method)
-        if 'Win' in path:
-            sum += 1
-        elif 'Poison' in path:
-            poison += 1
-        else:
-            eaten += 1
-    print("Poison:",poison/n_runs)   
-    print("Eaten:",eaten/n_runs)  
-    print("The probability of winning:",sum/n_runs)
-    # Create the Plot
-    #animate_solution(maze, path)
-    x = np.arange(1, 50001)  # Episodes (1 to 50000)
+    # Plot results
     plt.figure(figsize=(10, 6))
-    plt.plot(x, initial, label='epsilon=0.1', color='b', linewidth=1)
-    plt.plot(x, initial2, label='epsilon=0.2', color='r', linewidth=1)  
-    # Add Labels and Title
+    x = np.arange(1, n_episodes+1)  # Episodes
+    
+    for epsilon in epsilons:
+        plt.plot(x, initial_values[epsilon], 
+                label=f'ε={epsilon}', 
+                linewidth=1)
+    
     plt.xlabel('Number of Episodes', fontsize=12)
     plt.ylabel('Value Function', fontsize=12)
     plt.title('Value Function over Episodes', fontsize=14)
     plt.grid(True)
     plt.legend()
-
-    # Show the Plot
     plt.tight_layout()
     plt.show()
